@@ -286,12 +286,12 @@
           <div class="sub">대표원장 대시보드</div>
         </div>
       </div>
-      <ul class="sidebar-nav">
-        <li class="active"><span class="icon">📊</span> 대시보드</li>
-        <li><span class="icon">👩‍🏫</span> 선생님 관리</li>
-        <li><span class="icon">🧑‍🎓</span> 학생 관리</li>
-        <li><span class="icon">💬</span> 문자 발송</li>
-        <li><span class="icon">⚙️</span> 설정</li>
+      <ul class="sidebar-nav" id="sidebarNav">
+        <li class="active" data-page="dashboard"><span class="icon">📊</span> 대시보드</li>
+        <li data-page="teachers"><span class="icon">👩‍🏫</span> 선생님 관리</li>
+        <li data-page="students"><span class="icon">🧑‍🎓</span> 학생 관리</li>
+        <li data-page="sms"><span class="icon">💬</span> 문자 발송</li>
+        <li data-page="settings"><span class="icon">⚙️</span> 설정</li>
       </ul>
     </div>
     <div class="sidebar-footer">
@@ -307,6 +307,8 @@
 
   <!-- Main Content -->
   <main class="main">
+    <!-- ===== 대시보드 페이지 ===== -->
+    <div id="page-dashboard" class="page-content">
     <div class="page-header">
       <div class="page-title">대시보드</div>
       <div class="header-right">
@@ -638,6 +640,85 @@
 
       <div class="paid-toggle">▶ ✅ 결제 완료 (42명) — 펼치기</div>
     </div>
+    </div><!-- /page-dashboard -->
+
+    <!-- ===== 선생님 관리 페이지 ===== -->
+    <div id="page-teachers" class="page-content" style="display:none;">
+      <div class="page-header">
+        <div class="page-title">선생님 관리</div>
+      </div>
+      <div id="teachers-page-content">
+        <div style="background:white; border-radius:16px; padding:24px; box-shadow:0 2px 8px rgba(214,51,132,0.06); border:1px solid #f8e8ee;">
+          <table class="data-table" style="width:100%;">
+            <thead><tr>
+              <th>선생님</th><th>직급</th><th>담당 학생</th><th>수행 완료율</th><th>미수행</th><th>문자 발송</th>
+            </tr></thead>
+            <tbody id="teacher-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 학생 관리 페이지 ===== -->
+    <div id="page-students" class="page-content" style="display:none;">
+      <div class="page-header">
+        <div class="page-title">학생 관리</div>
+        <div class="header-right">
+          <input type="text" id="student-search" placeholder="🔍 학생 검색..." style="padding:8px 16px; border:1px solid #f0e8ec; border-radius:20px; font-size:13px; width:250px; outline:none;">
+          <select id="student-day-filter" style="padding:8px 12px; border:1px solid #f0e8ec; border-radius:12px; font-size:13px;">
+            <option value="">전체 요일</option>
+            <option value="월요일">월</option><option value="화요일">화</option><option value="수요일">수</option>
+            <option value="목요일">목</option><option value="금요일">금</option><option value="토요일">토</option><option value="일요일">일</option>
+          </select>
+        </div>
+      </div>
+      <div style="background:white; border-radius:16px; padding:24px; box-shadow:0 2px 8px rgba(214,51,132,0.06); border:1px solid #f8e8ee;">
+        <table class="data-table" style="width:100%;">
+          <thead><tr>
+            <th>이름</th><th>학교/학년</th><th>담당T</th><th>수업요일</th><th>수행률</th><th>D-Day</th><th>상태</th>
+          </tr></thead>
+          <tbody id="student-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== 문자 발송 페이지 ===== -->
+    <div id="page-sms" class="page-content" style="display:none;">
+      <div class="page-header">
+        <div class="page-title">문자 발송</div>
+      </div>
+      <div style="background:white; border-radius:16px; padding:24px; box-shadow:0 2px 8px rgba(214,51,132,0.06); border:1px solid #f8e8ee;">
+        <div id="sms-page-content" style="color:#999; text-align:center; padding:40px;">
+          📬 문자 발송 로그 (SMS 수집 후 표시)
+          <table class="data-table" style="width:100%; margin-top:20px; text-align:left;">
+            <thead><tr><th>발송일</th><th>선생님</th><th>학생</th><th>내용</th></tr></thead>
+            <tbody id="sms-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 설정 페이지 ===== -->
+    <div id="page-settings" class="page-content" style="display:none;">
+      <div class="page-header">
+        <div class="page-title">설정</div>
+      </div>
+      <div style="background:white; border-radius:16px; padding:24px; box-shadow:0 2px 8px rgba(214,51,132,0.06); border:1px solid #f8e8ee;">
+        <h3 style="font-size:15px; margin-bottom:16px;">📡 데이터 동기화</h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <button onclick="window.location.reload()" style="padding:10px 20px; background:#d63384; color:white; border:none; border-radius:10px; cursor:pointer; font-size:13px;">🔄 새로고침</button>
+        </div>
+        <div style="margin-top:24px;">
+          <h3 style="font-size:15px; margin-bottom:12px;">ℹ️ 시스템 정보</h3>
+          <div style="font-size:13px; color:#666; line-height:2;">
+            <div>Supabase 프로젝트: brpruzsnysqmydsgeexe</div>
+            <div>대시보드 버전: v1.2</div>
+            <div id="last-sync-info">마지막 동기화: -</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- Right Sidebar -->
@@ -1457,6 +1538,164 @@ const DB = {
   // 모바일 날짜 동기화
   const mDate = document.getElementById('today-date-m');
   if (mDate) mDate.textContent = document.getElementById('today-date').textContent;
+
+  // ===== 사이드바 네비게이션 =====
+  let _cachedData = null; // 대시보드 데이터 캐시
+
+  document.getElementById('sidebarNav').addEventListener('click', async (e) => {
+    const li = e.target.closest('li[data-page]');
+    if (!li) return;
+    const page = li.dataset.page;
+    
+    // 활성 탭 전환
+    document.querySelectorAll('#sidebarNav li').forEach(l => l.classList.remove('active'));
+    li.classList.add('active');
+    
+    // 페이지 전환
+    document.querySelectorAll('.page-content').forEach(p => p.style.display = 'none');
+    const target = document.getElementById(`page-${page}`);
+    if (target) target.style.display = 'block';
+    
+    // 페이지별 데이터 로딩
+    if (page === 'teachers') await renderTeachersPage();
+    if (page === 'students') await renderStudentsPage();
+    if (page === 'sms') await renderSmsPage();
+  });
+
+  async function renderTeachersPage() {
+    const db = new DashboardDB();
+    const teachers = await db.select('teachers', 'select=*');
+    const students = await db.select('students', 'select=*&is_active=eq.true');
+    const att = await db.select('attendance_records', `select=*&type=eq.homework&record_date=eq.${new Date().toISOString().split('T')[0]}`);
+    const sms = await db.select('sms_logs', 'select=*&order=sent_at.desc&limit=100');
+    
+    const tbody = document.getElementById('teacher-table-body');
+    tbody.innerHTML = teachers.map(t => {
+      const myStudents = students.filter(s => s.teacher_id === t.id);
+      const myAtt = att.filter(a => a.teacher_id === t.id);
+      let done = 0, total = 0;
+      myAtt.forEach(a => {
+        try {
+          const d = JSON.parse(a.status);
+          const pct = parseInt(d.progress_pct) || 0;
+          total++;
+          if (pct >= 100) done++;
+        } catch(e) {}
+      });
+      const completionRate = total > 0 ? Math.round(done / total * 100) : 0;
+      const notDone = total - done;
+      const mySms = sms.filter(s => s.teacher_id === t.id);
+      const rateColor = completionRate >= 80 ? '#4caf50' : completionRate >= 50 ? '#ff9800' : '#e74c3c';
+      
+      return `<tr>
+        <td><strong>${t.name || '-'}T</strong></td>
+        <td style="color:#999;">${t.username || '-'}</td>
+        <td>${myStudents.length}명</td>
+        <td><span style="color:${rateColor}; font-weight:600;">${completionRate}%</span> (${done}/${total})</td>
+        <td>${notDone > 0 ? `<span style="color:#e74c3c; font-weight:600;">${notDone}명</span>` : '✅ 0명'}</td>
+        <td>${mySms.length}건</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function renderStudentsPage() {
+    const db = new DashboardDB();
+    const students = await db.select('students', 'select=*&is_active=eq.true');
+    const teachers = await db.select('teachers', 'select=*');
+    const att = await db.select('attendance_records', `select=*&type=eq.homework&record_date=eq.${new Date().toISOString().split('T')[0]}`);
+    
+    const teacherMap = Object.fromEntries(teachers.map(t => [t.id, t]));
+    const perfMap = new Map();
+    att.forEach(a => {
+      if (a.student_id) {
+        try { perfMap.set(a.student_id, JSON.parse(a.status)); } catch(e) {}
+      }
+    });
+    
+    // dedup
+    const sm = {};
+    students.forEach(s => {
+      const k = s.student_code || s.id;
+      const ex = sm[k];
+      if (!ex || (!ex.teacher_id && s.teacher_id)) sm[k] = s;
+    });
+    let list = Object.values(sm);
+    
+    function renderStudentTable(filtered) {
+      const tbody = document.getElementById('student-table-body');
+      tbody.innerHTML = filtered.map(s => {
+        const t = teacherMap[s.teacher_id];
+        const perf = perfMap.get(s.id);
+        const pct = perf ? parseInt(perf.progress_pct) || 0 : null;
+        const displayName = perf?.name || s.name || '-';
+        const classDay = perf?.class_day || '';
+        const dDay = perf?.d_day || '';
+        const statusColor = pct === null ? '#999' : pct >= 100 ? '#4caf50' : pct > 0 ? '#ff9800' : '#e74c3c';
+        const statusText = pct === null ? '미수집' : pct >= 100 ? '✅ 완료' : pct > 0 ? `🔄 ${pct}%` : '❌ 미수행';
+        
+        return `<tr>
+          <td><strong>${displayName}</strong></td>
+          <td>${s.school || '-'} / ${s.grade || '-'}</td>
+          <td>${t ? t.name + 'T' : '-'}</td>
+          <td>${classDay}</td>
+          <td><span style="color:${statusColor}; font-weight:600;">${pct !== null ? pct + '%' : '-'}</span></td>
+          <td>${dDay || '-'}</td>
+          <td style="font-size:12px;">${statusText}</td>
+        </tr>`;
+      }).join('');
+    }
+    
+    renderStudentTable(list);
+    
+    // 검색
+    document.getElementById('student-search').oninput = function() {
+      const q = this.value.toLowerCase();
+      const dayVal = document.getElementById('student-day-filter').value;
+      let filtered = list.filter(s => {
+        const perf = perfMap.get(s.id);
+        const name = (perf?.name || s.name || '').toLowerCase();
+        const school = (s.school || '').toLowerCase();
+        return name.includes(q) || school.includes(q);
+      });
+      if (dayVal) filtered = filtered.filter(s => {
+        const perf = perfMap.get(s.id);
+        return perf?.class_day === dayVal;
+      });
+      renderStudentTable(filtered);
+    };
+    
+    // 요일 필터
+    document.getElementById('student-day-filter').onchange = function() {
+      document.getElementById('student-search').dispatchEvent(new Event('input'));
+    };
+  }
+
+  async function renderSmsPage() {
+    const db = new DashboardDB();
+    const sms = await db.select('sms_logs', 'select=*&order=sent_at.desc&limit=50');
+    const teachers = await db.select('teachers', 'select=*');
+    const students = await db.select('students', 'select=*&is_active=eq.true');
+    
+    const teacherMap = Object.fromEntries(teachers.map(t => [t.id, t]));
+    const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
+    
+    const tbody = document.getElementById('sms-table-body');
+    if (sms.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999; padding:20px;">문자 로그 없음</td></tr>';
+      return;
+    }
+    tbody.innerHTML = sms.map(s => {
+      const teacher = teacherMap[s.teacher_id];
+      const student = studentMap[s.student_id];
+      const date = s.sent_at ? new Date(s.sent_at).toLocaleDateString('ko-KR') : '-';
+      return `<tr>
+        <td>${date}</td>
+        <td>${teacher?.name || '-'}T</td>
+        <td>${student?.name || '-'}</td>
+        <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${s.message || '-'}</td>
+      </tr>`;
+    }).join('');
+  }
 </script>
 
 <!-- Mobile Bottom Tab Bar -->
