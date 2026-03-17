@@ -728,33 +728,7 @@ const DB = {
     // 요일 필터 시: attendance에 있는 학생만 필터
     if (dayFilter) {
       const dayStudentIds = new Set(attendance.map(a => a.student_id).filter(Boolean));
-      // 이름+학교 조합으로 매칭 (student_id 없는 경우 fallback)
-      const dayNameSchool = new Set();
-      attendance.forEach(a => {
-        try {
-          const d = JSON.parse(a.status);
-          const name = d.name || '';
-          const school = (d.school || '').split('/')[0]; // "운암중/중3" → "운암중"
-          if (name && school) dayNameSchool.add(name + '|' + school);
-        } catch(e) {}
-      });
-      students = students.filter(s => {
-        if (dayStudentIds.has(s.id)) return true;
-        // 이름+학교 매칭: 마스킹 이름 패턴 + 학교명
-        const masked = s.name || '';
-        const sSchool = (s.school || '').split('/')[0];
-        if (masked.length < 2 || !sSchool) return false;
-        for (const key of dayNameSchool) {
-          const [fn, fSchool] = key.split('|');
-          if (fn.length !== masked.length || fSchool !== sSchool) continue;
-          let match = true;
-          for (let i = 0; i < masked.length; i++) {
-            if (masked[i] !== '*' && masked[i] !== fn[i]) { match = false; break; }
-          }
-          if (match) return true;
-        }
-        return false;
-      });
+      students = students.filter(s => dayStudentIds.has(s.id));
     }
     
     // 수행도 매핑: student_id 또는 teacher_id 기준
