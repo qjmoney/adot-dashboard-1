@@ -355,6 +355,16 @@
 
     <!-- Tab 1: 학생관리 -->
     <div class="tab-content active" id="tab-students">
+      <!-- 요일 필터 -->
+      <div class="day-filter" style="display:flex;gap:4px;margin-bottom:12px;background:#f5f0f2;border-radius:12px;padding:4px;width:fit-content;">
+        <button class="day-btn active" data-day="" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:white;color:#d63384;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,0.06);" onclick="filterByDay(this,'')">전체</button>
+        <button class="day-btn" data-day="월요일" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:transparent;" onclick="filterByDay(this,'월요일')">월</button>
+        <button class="day-btn" data-day="화요일" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:transparent;" onclick="filterByDay(this,'화요일')">화</button>
+        <button class="day-btn" data-day="수요일" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:transparent;" onclick="filterByDay(this,'수요일')">수</button>
+        <button class="day-btn" data-day="목요일" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:transparent;" onclick="filterByDay(this,'목요일')">목</button>
+        <button class="day-btn" data-day="금요일" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:transparent;" onclick="filterByDay(this,'금요일')">금</button>
+        <button class="day-btn" data-day="토요일" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:#888;border-radius:10px;border:none;background:transparent;" onclick="filterByDay(this,'토요일')">토</button>
+      </div>
       <div class="filter-row">
         <select class="filter-select" id="filter-teacher">
           <option value="">전체 선생님</option>
@@ -685,14 +695,24 @@ const DB = {
     });
     return res.ok;
   },
-  async getTeacherSummary() {
+  async getTeacherSummary(dayFilter) {
     const teachers = await this.select('teachers', 'select=*&order=name');
     const rawStudents = await this.select('students', 'select=*,teacher_id&is_active=eq.true');
     const smsLogs = await this.select('sms_logs', 'select=*&order=sent_at.desc&limit=100');
     
     // 수행도 데이터 (오늘)
     const today = new Date().toISOString().split('T')[0];
-    const attendance = await this.select('attendance_records', `select=*&record_date=eq.${today}&type=eq.homework`);
+    let attendance = await this.select('attendance_records', `select=*&record_date=eq.${today}&type=eq.homework`);
+    
+    // 요일 필터 적용
+    if (dayFilter) {
+      attendance = attendance.filter(a => {
+        try {
+          const detail = JSON.parse(a.status);
+          return detail.class_day === dayFilter;
+        } catch(e) { return false; }
+      });
+    }
     
     // 중복 제거: student_code 기준, teacher_id 있는 레코드 우선
     const studentMap = new Map();
@@ -703,7 +723,22 @@ const DB = {
         studentMap.set(key, s);
       }
     });
-    const students = Array.from(studentMap.values());
+    let students = Array.from(studentMap.values());
+    
+    // 요일 필터 시: attendance에 있는 학생만 필터
+    if (dayFilter) {
+      const dayStudentIds = new Set(attendance.map(a => a.student_id).filter(Boolean));
+      // teacher_id 기반으로도 매칭 (student_id null인 경우)
+      const dayTeacherIds = new Set(attendance.map(a => a.teacher_id).filter(Boolean));
+      // attendance에 이름으로 매칭
+      const dayNames = new Set();
+      attendance.forEach(a => {
+        try { dayNames.add(JSON.parse(a.status).name); } catch(e) {}
+      });
+      students = students.filter(s => 
+        dayStudentIds.has(s.id) || dayNames.has(s.name)
+      );
+    }
     
     // 수행도 매핑: student_id 또는 teacher_id 기준
     // student_id가 null인 경우가 많으므로 (이름 마스킹 불일치) teacher_id 기반으로도 매핑
@@ -841,9 +876,10 @@ const DB = {
   let cachedStudents = [];
 
   // Supabase에서 실제 데이터 로드
-  async function loadRealData() {
+  async function loadRealData(dayFilter) {
+    dayFilter = dayFilter !== undefined ? dayFilter : currentDayFilter;
     try {
-      const teacherData = await DB.getTeacherSummary();
+      const teacherData = await DB.getTeacherSummary(dayFilter);
       
       if (!teacherData || teacherData.length === 0) {
         console.log('Supabase 데이터 없음 — 목업 유지');
@@ -1312,6 +1348,28 @@ const DB = {
 
   // 메모 탭 전환 시 로드
   const origSwitchTab = switchTab;
+
+  // 요일 필터
+  let currentDayFilter = '';
+  let cachedAttendanceAll = null;
+
+  window.filterByDay = async function(btn, day) {
+    // 버튼 스타일 업데이트
+    document.querySelectorAll('.day-btn').forEach(b => {
+      b.style.background = 'transparent';
+      b.style.color = '#888';
+      b.style.fontWeight = '500';
+      b.style.boxShadow = 'none';
+    });
+    btn.style.background = 'white';
+    btn.style.color = '#d63384';
+    btn.style.fontWeight = '600';
+    btn.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+
+    currentDayFilter = day;
+    // 요일 기반으로 데이터 다시 로드
+    await loadRealData(day);
+  };
 
   // 필터 이벤트
   document.getElementById('filter-teacher').addEventListener('change', applyFilters);
