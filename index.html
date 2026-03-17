@@ -348,6 +348,15 @@
       </div>
     </div>
 
+    <!-- 수업일지 미작성 알림 -->
+    <div id="journal-alert" style="display:none; background:linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius:16px; padding:20px; margin-bottom:20px; border:1px solid #ffcc80;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div style="font-size:15px; font-weight:700; color:#e65100;">📝 수업일지 미작성</div>
+        <span id="journal-count" style="background:#e65100; color:white; padding:4px 12px; border-radius:12px; font-size:12px; font-weight:600;">0건</span>
+      </div>
+      <div id="journal-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
     <!-- Tabs -->
     <div class="tabs">
       <div class="tab active" onclick="switchTab('students', this)">🎓 학생관리 <span class="badge">6</span></div>
@@ -1070,6 +1079,57 @@ const DB = {
     if (vals[3]) vals[3].textContent = allNotStarted + '명';
     const badge = document.querySelector('.tab .badge');
     if (badge) badge.textContent = allNotStarted;
+    
+    // 수업일지 미작성 로딩
+    await renderJournalAlert();
+  }
+
+  async function renderJournalAlert() {
+    try {
+      const journals = await DB.select('attendance_records', 'select=*&type=eq.class_journal&order=record_date.desc');
+      const alertDiv = document.getElementById('journal-alert');
+      const countSpan = document.getElementById('journal-count');
+      const listDiv = document.getElementById('journal-list');
+      
+      if (!journals || journals.length === 0) {
+        alertDiv.style.display = 'none';
+        return;
+      }
+      
+      alertDiv.style.display = 'block';
+      countSpan.textContent = journals.length + '건';
+      
+      // 선생님별 그룹핑
+      const teachers = await DB.select('teachers', 'select=*');
+      const teacherMap = Object.fromEntries(teachers.map(t => [t.id, t]));
+      
+      const byTeacher = {};
+      journals.forEach(j => {
+        try {
+          const detail = JSON.parse(j.status);
+          const tid = j.teacher_id || '__none__';
+          if (!byTeacher[tid]) byTeacher[tid] = { teacher: teacherMap[tid], items: [] };
+          byTeacher[tid].items.push({ ...detail, record_date: j.record_date });
+        } catch(e) {}
+      });
+      
+      listDiv.innerHTML = Object.values(byTeacher).map(group => {
+        const tName = group.teacher?.name ? group.teacher.name + 'T' : '미배정';
+        const items = group.items.map(item => {
+          const daysAgo = Math.floor((new Date() - new Date(item.class_date)) / 86400000);
+          const urgency = daysAgo >= 3 ? '🔴' : daysAgo >= 2 ? '🟠' : '🟡';
+          return `<span style="display:inline-block; background:white; padding:4px 10px; border-radius:8px; font-size:12px; margin:2px;">${urgency} ${item.name || '?'} <span style="color:#999;">(${item.class_date})</span></span>`;
+        }).join('');
+        return `<div style="margin-bottom:6px;">
+          <span style="font-weight:600; font-size:13px; color:#bf360c;">${tName}</span> 
+          <span style="color:#999; font-size:12px;">${group.items.length}명 미작성</span>
+          <div style="margin-top:4px;">${items}</div>
+        </div>`;
+      }).join('');
+      
+    } catch(e) {
+      console.error('Journal alert error:', e);
+    }
   }
 
   // 선생님 행 클릭 → 학생 카드 펼치기
