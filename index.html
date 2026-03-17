@@ -601,10 +601,17 @@ const DB = {
     });
     const students = Array.from(studentMap.values());
     
-    // 수행도 매핑: student_id → status
+    // 수행도 매핑: student_id → 상세 데이터
     const perfMap = new Map();
     attendance.forEach(a => {
-      if (a.student_id) perfMap.set(a.student_id, a.status);
+      if (a.student_id) {
+        try {
+          const detail = JSON.parse(a.status);
+          perfMap.set(a.student_id, detail);
+        } catch(e) {
+          perfMap.set(a.student_id, { progress_pct: a.status === 'completed' ? 100 : 0 });
+        }
+      }
     });
     
     const result = teachers.map(t => {
@@ -612,10 +619,24 @@ const DB = {
       const mySms = smsLogs.filter(s => s.teacher_id === t.id);
       const lastSms = mySms[0]?.sent_at ? new Date(mySms[0].sent_at) : null;
       
-      // 수행도 계산
-      const completedCount = myStudents.filter(s => perfMap.get(s.id) === 'completed').length;
-      const inProgressCount = myStudents.filter(s => perfMap.get(s.id) === 'in_progress').length;
-      const notStartedCount = myStudents.length - completedCount - inProgressCount;
+      // 수행도 계산 (숙제 건수 기준)
+      let totalAssigned = 0, totalHwCompleted = 0;
+      myStudents.forEach(s => {
+        const perf = perfMap.get(s.id);
+        if (perf) {
+          s._perf = perf;
+          const a = parseInt(perf.hw_assigned) || 0;
+          const c = parseInt(perf.hw_completed) || 0;
+          totalAssigned += a;
+          totalHwCompleted += c;
+        } else {
+          s._perf = null;
+        }
+      });
+      const completedCount = myStudents.filter(s => s._perf && s._perf.progress_pct >= 100).length;
+      const inProgressCount = myStudents.filter(s => s._perf && s._perf.progress_pct > 0 && s._perf.progress_pct < 100).length;
+      const notStartedCount = myStudents.filter(s => !s._perf || s._perf.progress_pct === 0).length;
+      const hwCompletionRate = totalAssigned > 0 ? Math.round((totalHwCompleted / totalAssigned) * 100) : 0;
       
       return { 
         ...t, 
@@ -625,7 +646,10 @@ const DB = {
         lastSmsSent: lastSms ? `${lastSms.getMonth()+1}/${lastSms.getDate()}` : '-',
         completedCount,
         inProgressCount,
-        notStartedCount
+        notStartedCount,
+        hwCompletionRate,
+        totalAssigned,
+        totalHwCompleted
       };
     });
     
@@ -741,8 +765,7 @@ const DB = {
     filtered.forEach((t, i) => {
       const color = COLORS[i % COLORS.length];
       const initial = t.name ? t.name[0] : '?';
-      const completionRate = t.studentCount > 0 ? Math.round(((t.completedCount || 0) / t.studentCount) * 100) : 0;
-      const cappedRate = Math.min(completionRate, 100);
+      const cappedRate = Math.min(t.hwCompletionRate || 0, 100);
       const notStarted = t.notStartedCount || t.studentCount;
       const status = getStatusInfo(cappedRate);
       
@@ -820,16 +843,34 @@ const DB = {
     if (!teacher.students || teacher.students.length === 0) {
       td.innerHTML = '<div style="color:#999; font-size:13px;">학생 데이터 없음</div>';
     } else {
-      let cards = '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px;">';
-      teacher.students.forEach(s => {
+      // 수행도 낮은 순으로 정렬
+      const sorted = [...teacher.students].sort((a, b) => {
+        const pa = a._perf?.progress_pct ?? -1;
+        const pb = b._perf?.progress_pct ?? -1;
+        return pa - pb;
+      });
+      
+      let cards = '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px;">';
+      sorted.forEach(s => {
+        const perf = s._perf;
+        const pct = perf?.progress_pct ?? null;
+        const borderColor = pct === null ? '#ddd' : pct >= 100 ? '#43a047' : pct > 0 ? '#ef6c00' : '#e53935';
+        const bgColor = pct === null ? '#fafafa' : pct >= 100 ? '#f1f8e9' : pct > 0 ? '#fff8e1' : '#fce4ec';
+        const statusEmoji = pct === null ? '⬜' : pct >= 100 ? '✅' : pct > 0 ? '🔄' : '❌';
+        
         cards += `
-          <div style="background:white; border-radius:12px; padding:14px 16px; border:1px solid #f8e8ee; border-left:3px solid ${color === 'pink' ? '#d63384' : color === 'purple' ? '#7b1fa2' : color === 'blue' ? '#1976d2' : color === 'green' ? '#43a047' : '#ef6c00'};">
-            <div style="font-weight:600; font-size:14px; margin-bottom:6px;">${s.name || '이름없음'}</div>
-            <div style="font-size:12px; color:#666; line-height:1.8;">
-              ${s.school ? s.school + ' / ' + (s.grade || '') : '학교 미등록'}
-              ${s.phone ? '<br>📱 ' + s.phone : ''}
-              ${s.class_name ? '<br>📚 ' + s.class_name : ''}
+          <div style="background:${bgColor}; border-radius:12px; padding:14px 16px; border:1px solid #f8e8ee; border-left:4px solid ${borderColor};">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <div style="font-weight:600; font-size:14px;">${statusEmoji} ${s.name || '이름없음'}</div>
+              ${perf ? `<span style="font-size:13px; font-weight:700; color:${borderColor};">${pct}%</span>` : '<span style="font-size:12px; color:#999;">수행도 미수집</span>'}
             </div>
+            <div style="font-size:12px; color:#666; line-height:1.8;">
+              ${s.school ? s.school + (s.grade ? ' / ' + s.grade : '') : ''}
+              ${perf ? `<br>📝 숙제: ${perf.hw_completed || '-'} / ${perf.hw_assigned || '-'}건` : ''}
+              ${perf?.d_day ? `&nbsp;&nbsp;⏰ ${perf.d_day}` : ''}
+              ${perf?.class_day ? `&nbsp;&nbsp;📅 ${perf.class_day}` : ''}
+            </div>
+            ${perf ? `<div style="margin-top:8px; height:6px; background:#eee; border-radius:3px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:${borderColor}; border-radius:3px; transition:width .3s;"></div></div>` : ''}
           </div>`;
       });
       cards += '</div>';
