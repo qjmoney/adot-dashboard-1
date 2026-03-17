@@ -583,8 +583,19 @@ const DB = {
   },
   async getTeacherSummary() {
     const teachers = await this.select('teachers', 'select=*&order=name');
-    const students = await this.select('students', 'select=*,teacher_id&is_active=eq.true');
+    const rawStudents = await this.select('students', 'select=*,teacher_id&is_active=eq.true');
     const smsLogs = await this.select('sms_logs', 'select=*&order=sent_at.desc&limit=100');
+    
+    // 중복 제거: student_code 기준, teacher_id 있는 레코드 우선
+    const studentMap = new Map();
+    rawStudents.forEach(s => {
+      const key = s.student_code || s.id; // student_code 없으면 id 사용
+      const existing = studentMap.get(key);
+      if (!existing || (!existing.teacher_id && s.teacher_id)) {
+        studentMap.set(key, s);
+      }
+    });
+    const students = Array.from(studentMap.values());
     
     const result = teachers.map(t => {
       const myStudents = students.filter(s => s.teacher_id === t.id);
