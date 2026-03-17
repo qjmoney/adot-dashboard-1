@@ -520,38 +520,8 @@
   <!-- Right Sidebar -->
   <aside class="right-sidebar">
     <div class="right-title">📋 최근 활동</div>
-    
-    <div class="activity-item">
-      <div class="activity-time">16:45</div>
-      <div class="activity-text">테스트 결과 입력 — <strong>박은식T</strong> → 이수진 (A등급)</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">16:30</div>
-      <div class="activity-text">알림톡 발송 — <strong>최옥진T</strong> → 김*수 학부모</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">15:20</div>
-      <div class="activity-text">수강권 결제 — 차*서 (169,350원)</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">14:50</div>
-      <div class="activity-text"><span class="alert-text">⚠ 미수행 경고</span> — 홍*동 (진다은T)</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">14:10</div>
-      <div class="activity-text">출석 확인 — <strong>서민주T</strong> 반 전원 출석</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">13:30</div>
-      <div class="activity-text">수강권 결제 — 김서*2 (316,120원)</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">11:00</div>
-      <div class="activity-text">알림톡 발송 — <strong>박은식T</strong> → 소*진 학부모</div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-time">10:30</div>
-      <div class="activity-text">전파사항 수정 — 서예린 원장</div>
+    <div id="activity-feed">
+      <div class="activity-item"><div class="activity-text" style="color:#bbb">로딩 중...</div></div>
     </div>
   </aside>
 </div>
@@ -781,11 +751,8 @@ const DB = {
         console.log('결제 데이터 로드 실패:', e.message);
       }
 
-      // 타임라인
-      try {
-        const smsLogs = await DB.select('sms_logs', 'select=*,teacher:teachers(name)&order=sent_at.desc&limit=8');
-        renderTimeline(smsLogs);
-      } catch(e) {}
+      // 최근 활동 피드
+      try { await loadActivityFeed(); } catch(e) { console.log('활동 피드 로드 실패:', e.message); }
 
     } catch (e) {
       console.log('Supabase 연결 실패 (목업 모드):', e.message);
@@ -983,6 +950,126 @@ const DB = {
         </div>`;
     });
     container.innerHTML = html;
+  }
+
+  // ============================================
+  // 최근 활동 피드
+  // ============================================
+  function maskName(name) {
+    if (!name || name.length <= 1) return name || '?';
+    return name[0] + '*'.repeat(name.length - 1);
+  }
+  function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  async function loadActivityFeed() {
+    const feed = document.getElementById('activity-feed');
+    if (!feed) return;
+    const items = [];
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 1) 숙제 수행도 — 등원 3일 이내 & 수행도 50% 이하 경고
+    try {
+      const hwRecords = await DB.select('attendance_records',
+        `select=*,teacher:teachers(name)&record_date=eq.${today}&type=eq.homework`);
+      hwRecords.forEach(r => {
+        const s = typeof r.status === 'string' ? JSON.parse(r.status) : r.status;
+        if (!s) return;
+        const dday = s.d_day || '';
+        const pct = s.progress_pct || 0;
+        const ddayNum = parseInt(dday.replace('D-','')) || 99;
+        const teacherName = r.teacher?.name || '미지정';
+
+        // 등원 3일전 수행도 50%이하 → 경고
+        if (ddayNum <= 3 && pct < 50) {
+          items.push({
+            time: r.created_at,
+            priority: 1,
+            html: `<span class="alert-text">⚠ 미수행 경고</span> — ${maskName(s.name)} (${dday}, ${pct}%) · <strong>${teacherName}T</strong>`
+          });
+        }
+        // 숙제 완료 확인 (수행도 100%)
+        if (pct >= 100) {
+          items.push({
+            time: r.created_at,
+            priority: 3,
+            html: `✅ 숙제 완료 — ${maskName(s.name)} · <strong>${teacherName}T</strong>`
+          });
+        }
+      });
+    } catch(e) { console.log('숙제 활동 로드 실패:', e); }
+
+    // 2) 출석 기록
+    try {
+      const attRecords = await DB.select('attendance_records',
+        `select=*,teacher:teachers(name),student:students(name)&record_date=eq.${today}&type=eq.attendance&order=created_at.desc&limit=10`);
+      attRecords.forEach(r => {
+        const studentName = r.student?.name || '학생';
+        const teacherName = r.teacher?.name || '미지정';
+        const st = typeof r.status === 'string' ? JSON.parse(r.status) : (r.status || {});
+        const label = st.status === 'absent' ? '❌ 결석' : '✅ 출석';
+        items.push({
+          time: r.created_at,
+          priority: 2,
+          html: `${label} — ${maskName(studentName)} · <strong>${teacherName}T</strong>`
+        });
+      });
+    } catch(e) {}
+
+    // 3) 수강권 결제
+    try {
+      const payments = await DB.select('payments',
+        `select=*,student:students(name),teacher:teachers(name)&order=created_at.desc&limit=10`);
+      payments.forEach(p => {
+        const studentName = p.student?.name || '학생';
+        const amount = (p.amount || 0).toLocaleString();
+        items.push({
+          time: p.created_at,
+          priority: 2,
+          html: `💳 수강권 결제 — ${maskName(studentName)} (${amount}원)`
+        });
+      });
+    } catch(e) {}
+
+    // 4) 테스트 결과 입력
+    try {
+      const tests = await DB.select('test_results',
+        `select=*,student:students(name),teacher:teachers(name)&order=created_at.desc&limit=10`);
+      tests.forEach(t => {
+        const studentName = t.student?.name || '학생';
+        const teacherName = t.teacher?.name || '미지정';
+        const grade = t.grade || t.score || '-';
+        items.push({
+          time: t.created_at,
+          priority: 2,
+          html: `📊 테스트 결과 — <strong>${teacherName}T</strong> → ${maskName(studentName)} (${grade})`
+        });
+      });
+    } catch(e) {} // test_results 테이블 없으면 무시
+
+    // 경고를 상위에, 나머지는 시간순 역순
+    items.sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return new Date(b.time) - new Date(a.time);
+    });
+
+    // 최대 12개만 표시
+    const display = items.slice(0, 12);
+
+    if (display.length === 0) {
+      feed.innerHTML = '<div class="activity-item"><div class="activity-text" style="color:#bbb">오늘 활동 기록 없음</div></div>';
+      return;
+    }
+
+    feed.innerHTML = display.map(item => `
+      <div class="activity-item">
+        <div class="activity-time">${formatTime(item.time)}</div>
+        <div class="activity-text">${item.html}</div>
+      </div>
+    `).join('');
   }
 
   // ============================================
