@@ -685,6 +685,10 @@ const DB = {
     return { badge: 'good', dot: 'green', label: '양호' };
   }
 
+  // 전역 데이터 캐시
+  let cachedTeachers = [];
+  let cachedStudents = [];
+
   // Supabase에서 실제 데이터 로드
   async function loadRealData() {
     try {
@@ -695,75 +699,225 @@ const DB = {
         return;
       }
 
+      cachedTeachers = teacherData;
       console.log('Supabase 연동 성공! 선생님:', teacherData.length);
 
-      // 선생님 테이블 업데이트
-      const tbody = document.querySelector('#tab-students .data-table tbody');
-      if (tbody && teacherData.some(t => t.studentCount > 0)) {
-        tbody.innerHTML = '';
-        
-        let totalStudents = 0;
-        let totalAlerts = 0;
-        
-        teacherData.forEach((t, i) => {
+      // 필터 드롭다운 업데이트
+      const filterTeacher = document.querySelector('.filter-select');
+      if (filterTeacher && filterTeacher.options.length <= 1) {
+        teacherData.forEach(t => {
           if (t.studentCount === 0) return;
-          
-          const color = COLORS[i % COLORS.length];
-          const initial = t.name ? t.name[0] : '?';
-          // 임시: 수행 완료율은 수집 데이터에서 계산 필요
-          const completionRate = t.studentCount > 0 ? Math.round((t.smsCount / t.studentCount) * 100) : 0;
-          const cappedRate = Math.min(completionRate, 100);
-          const status = getStatusInfo(cappedRate);
-          const fillClass = cappedRate >= 70 ? 'high' : cappedRate >= 50 ? 'mid' : 'low';
-          const textColor = cappedRate >= 70 ? '#43a047' : cappedRate >= 50 ? '#ef6c00' : '#e53935';
-          
-          totalStudents += t.studentCount;
-          if (cappedRate < 70) totalAlerts++;
-
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td>
-              <div class="teacher-cell">
-                <div class="teacher-avatar ${color}">${initial}</div>
-                <div class="teacher-cell-name">${t.name || '미지정'}T</div>
-              </div>
-            </td>
-            <td>${t.studentCount}명</td>
-            <td>
-              <div class="progress-wrap">
-                <div class="progress-bar"><div class="progress-fill ${fillClass}" style="width:${cappedRate}%"></div></div>
-                <span class="progress-text" style="color:${textColor}">${cappedRate}%</span>
-              </div>
-            </td>
-            <td>${status.label === '긴급' ? '<strong style="color:#e53935;">' : ''}${t.studentCount - Math.round(t.studentCount * cappedRate / 100)}명${status.label === '긴급' ? '</strong>' : ''}</td>
-            <td>${t.smsCount}건 / ${t.studentCount}명</td>
-            <td>${t.lastSmsSent}</td>
-            <td><span class="status-badge ${status.badge}"><span class="status-dot ${status.dot}"></span> ${status.label}</span></td>
-          `;
-          tbody.appendChild(row);
+          const opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = (t.name || '미지정') + 'T';
+          filterTeacher.appendChild(opt);
         });
-
-        // 상단 요약 카드 업데이트
-        const summaryValues = document.querySelectorAll('.summary-card .value');
-        if (summaryValues[0]) summaryValues[0].textContent = totalStudents + '명';
       }
+
+      renderTeacherTable(teacherData);
 
       // 결제 데이터
       try {
         const paymentData = await DB.getPaymentSummary();
-        if (paymentData.total > 0) {
-          const regRate = Math.round((paymentData.paid.length / paymentData.total) * 100);
-          const summaryValues = document.querySelectorAll('.summary-card .value');
-          if (summaryValues[4]) summaryValues[4].textContent = regRate + '%';
-        }
+        renderPaymentTab(paymentData);
       } catch (e) {
         console.log('결제 데이터 로드 실패:', e.message);
       }
+
+      // 타임라인
+      try {
+        const smsLogs = await DB.select('sms_logs', 'select=*,teacher:teachers(name)&order=sent_at.desc&limit=8');
+        renderTimeline(smsLogs);
+      } catch(e) {}
 
     } catch (e) {
       console.log('Supabase 연결 실패 (목업 모드):', e.message);
     }
   }
+
+  function renderTeacherTable(teacherData, filterTeacherId, filterStatus) {
+    const tbody = document.querySelector('#tab-students .data-table tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    let totalStudents = 0, totalCompleted = 0, totalWarning = 0, totalDanger = 0;
+    
+    let filtered = teacherData.filter(t => t.studentCount > 0);
+    if (filterTeacherId) filtered = filtered.filter(t => t.id === filterTeacherId);
+
+    filtered.forEach((t, i) => {
+      const color = COLORS[i % COLORS.length];
+      const initial = t.name ? t.name[0] : '?';
+      const completionRate = t.studentCount > 0 ? Math.round((t.smsCount / t.studentCount) * 100) : 0;
+      const cappedRate = Math.min(completionRate, 100);
+      const status = getStatusInfo(cappedRate);
+      
+      if (filterStatus === 'danger' && status.label !== '긴급') return;
+      if (filterStatus === 'warning' && status.label !== '주의') return;
+      if (filterStatus === 'good' && status.label !== '양호') return;
+
+      const fillClass = cappedRate >= 70 ? 'high' : cappedRate >= 50 ? 'mid' : 'low';
+      const textColor = cappedRate >= 70 ? '#43a047' : cappedRate >= 50 ? '#ef6c00' : '#e53935';
+      const dangerCount = t.studentCount - Math.round(t.studentCount * cappedRate / 100);
+      
+      totalStudents += t.studentCount;
+      totalCompleted += Math.round(t.studentCount * cappedRate / 100);
+      if (status.label === '주의') totalWarning += dangerCount;
+      if (status.label === '긴급') totalDanger += dangerCount;
+
+      const row = document.createElement('tr');
+      row.style.cursor = 'pointer';
+      row.setAttribute('data-teacher-id', t.id);
+      row.onclick = function() { toggleStudentExpand(t, color); };
+      row.innerHTML = `
+        <td>
+          <div class="teacher-cell">
+            <div class="teacher-avatar ${color}">${initial}</div>
+            <div class="teacher-cell-name">${t.name || '미지정'}T</div>
+          </div>
+        </td>
+        <td>${t.studentCount}명</td>
+        <td>
+          <div class="progress-wrap">
+            <div class="progress-bar"><div class="progress-fill ${fillClass}" style="width:${cappedRate}%"></div></div>
+            <span class="progress-text" style="color:${textColor}">${cappedRate}%</span>
+          </div>
+        </td>
+        <td>${status.label === '긴급' ? '<strong style="color:#e53935;">' : ''}${dangerCount}명${status.label === '긴급' ? '</strong>' : ''}</td>
+        <td>${t.smsCount}건 / ${t.studentCount}명</td>
+        <td>${t.lastSmsSent}</td>
+        <td><span class="status-badge ${status.badge}"><span class="status-dot ${status.dot}"></span> ${status.label}</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    // 상단 요약 카드 업데이트
+    const vals = document.querySelectorAll('.summary-card .value');
+    if (vals[0]) vals[0].textContent = totalStudents + '명';
+    if (vals[1]) vals[1].textContent = totalCompleted + '명';
+    if (vals[2]) vals[2].textContent = totalWarning + '명';
+    if (vals[3]) vals[3].textContent = totalDanger + '명';
+    const badge = document.querySelector('.tab .badge');
+    if (badge) badge.textContent = totalDanger + totalWarning;
+  }
+
+  // 선생님 행 클릭 → 학생 카드 펼치기
+  function toggleStudentExpand(teacher, color) {
+    const existing = document.getElementById('expand-' + teacher.id);
+    if (existing) { existing.remove(); return; }
+
+    // 다른 펼쳐진 거 닫기
+    document.querySelectorAll('[id^="expand-"]').forEach(el => el.remove());
+
+    const row = document.querySelector(`tr[data-teacher-id="${teacher.id}"]`);
+    if (!row) return;
+
+    const expandRow = document.createElement('tr');
+    expandRow.id = 'expand-' + teacher.id;
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.style.cssText = 'background:#fef9fa; padding:20px;';
+
+    if (!teacher.students || teacher.students.length === 0) {
+      td.innerHTML = '<div style="color:#999; font-size:13px;">학생 데이터 없음</div>';
+    } else {
+      let cards = '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px;">';
+      teacher.students.forEach(s => {
+        cards += `
+          <div style="background:white; border-radius:12px; padding:14px 16px; border:1px solid #f8e8ee; border-left:3px solid ${color === 'pink' ? '#d63384' : color === 'purple' ? '#7b1fa2' : color === 'blue' ? '#1976d2' : color === 'green' ? '#43a047' : '#ef6c00'};">
+            <div style="font-weight:600; font-size:14px; margin-bottom:6px;">${s.name || '이름없음'}</div>
+            <div style="font-size:12px; color:#666; line-height:1.8;">
+              ${s.school ? s.school + ' / ' + (s.grade || '') : '학교 미등록'}
+              ${s.phone ? '<br>📱 ' + s.phone : ''}
+              ${s.class_name ? '<br>📚 ' + s.class_name : ''}
+            </div>
+          </div>`;
+      });
+      cards += '</div>';
+      td.innerHTML = cards;
+    }
+
+    expandRow.appendChild(td);
+    row.after(expandRow);
+  }
+
+  // 수강등록율 탭 DB 연동
+  function renderPaymentTab(data) {
+    if (!data || data.total === 0) return;
+    const rate = Math.round((data.paid.length / data.total) * 100);
+    const unpaidCount = data.total - data.paid.length;
+
+    // 요약 카드
+    const summary = document.getElementById('payment-summary') || document.querySelector('.reg-summary');
+    if (summary) {
+      summary.innerHTML = `
+        <div class="reg-card"><div class="lbl">수강등록율</div><div class="val pink">${rate}%</div><div class="lbl">${data.paid.length}/${data.total}명</div></div>
+        <div class="reg-card"><div class="lbl">결제 완료</div><div class="val green">${data.paid.length}명</div></div>
+        <div class="reg-card"><div class="lbl">미결제</div><div class="val red">${unpaidCount}명</div></div>
+        <div class="reg-card"><div class="lbl">금월 결제 총액</div><div class="val" style="font-size:28px;color:#7b1fa2;">₩${data.totalAmount.toLocaleString()}</div></div>
+      `;
+    }
+
+    // 상단 카드도 업데이트
+    const vals = document.querySelectorAll('.summary-card .value');
+    if (vals[4]) vals[4].textContent = rate + '%';
+    const subs = document.querySelectorAll('.summary-card .sub');
+    if (subs[4]) subs[4].textContent = data.paid.length + '/' + data.total + '명 결제 완료';
+
+    // 미결제 테이블
+    const unpaidTitle = document.querySelector('.unpaid-title');
+    if (unpaidTitle) unpaidTitle.textContent = '🔴 미결제 학생 (' + unpaidCount + '명)';
+
+    const payTbody = document.querySelector('#tab-registration .data-table tbody');
+    if (payTbody && data.unpaid.length > 0) {
+      payTbody.innerHTML = data.unpaid.map(p => {
+        const s = p.student || {};
+        const t = p.teacher || {};
+        return `<tr>
+          <td><strong>${s.name || '-'}</strong></td>
+          <td>${s.school || '-'} / ${s.grade || '-'}</td>
+          <td>${t.name ? t.name + 'T' : '-'}</td>
+          <td>-</td>
+          <td>-</td>
+          <td><span class="days-badge urgent">-</span></td>
+          <td>${p.amount ? p.amount.toLocaleString() + '원' : '-'}</td>
+        </tr>`;
+      }).join('');
+    } else if (payTbody && data.unpaid.length === 0) {
+      payTbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#43a047;padding:20px;">🎉 전원 결제 완료!</td></tr>';
+    }
+  }
+
+  // 타임라인 DB 연동
+  function renderTimeline(smsLogs) {
+    const container = document.querySelector('.right-sidebar');
+    if (!container || !smsLogs || smsLogs.length === 0) return;
+
+    let html = '<div class="right-title">📋 최근 활동</div>';
+    smsLogs.forEach(log => {
+      const time = log.sent_at ? new Date(log.sent_at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) : '';
+      const teacherName = log.teacher?.name || '?';
+      html += `
+        <div class="activity-item">
+          <div class="activity-time">${time}</div>
+          <div class="activity-text">${log.message_type || 'SMS'} 발송 — <strong>${teacherName}T</strong> → ${log.recipient_name || '학부모'}</div>
+        </div>`;
+    });
+    container.innerHTML = html;
+  }
+
+  // 필터 이벤트
+  document.querySelectorAll('.filter-select').forEach((sel, idx) => {
+    sel.addEventListener('change', () => {
+      const teacherFilter = document.querySelectorAll('.filter-select')[0]?.value || '';
+      const statusSel = document.querySelectorAll('.filter-select')[1]?.value || '';
+      let statusFilter = '';
+      if (statusSel.includes('긴급')) statusFilter = 'danger';
+      else if (statusSel.includes('주의')) statusFilter = 'warning';
+      else if (statusSel.includes('양호')) statusFilter = 'good';
+      renderTeacherTable(cachedTeachers, teacherFilter || null, statusFilter || null);
+    });
+  });
 
   // 날짜 자동 업데이트
   const now = new Date();
