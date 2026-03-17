@@ -1127,17 +1127,20 @@ const DB = {
         } catch(e) {}
       });
       
-      // 날짜 내림차순 (최근 먼저)
-      const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+      // 날짜 내림차순 (최근 먼저) — 일요일 제외
+      const sortedDates = Object.keys(byDate)
+        .filter(date => new Date(date).getDay() !== 0) // 일요일 제외
+        .sort((a, b) => b.localeCompare(a));
       const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
       
       listDiv.innerHTML = sortedDates.map(date => {
         const items = byDate[date];
-        const d = new Date(date);
-        const daysAgo = Math.floor((new Date() - d) / 86400000);
+        const d = new Date(date + 'T00:00:00'); // 시간 제거 — 날짜만 비교
+        const todayMid = new Date(); todayMid.setHours(0,0,0,0);
+        const daysAgo = Math.round((todayMid - d) / 86400000);
         const dayName = dayNames[d.getDay()];
         const urgency = daysAgo >= 3 ? '🔴' : daysAgo >= 2 ? '🟠' : '🟡';
-        const urgencyText = daysAgo >= 3 ? '3일+ 경과' : daysAgo === 2 ? '2일 전' : '어제';
+        const urgencyText = daysAgo >= 3 ? `${daysAgo}일 전` : daysAgo === 2 ? '그저께' : daysAgo === 1 ? '어제' : '오늘';
         
         // 선생님별 그룹
         const byT = {};
@@ -1149,16 +1152,16 @@ const DB = {
         
         const teacherHtml = Object.values(byT).map(group => {
           const tName = teacherMap[group[0].teacher_id]?.name;
-          const names = group.map(i => i.name || '?').join(', ');
-          return `<span style="font-size:12px;"><strong>${tName ? tName + 'T' : '미배정'}</strong> ${names}</span>`;
-        }).join(' · ');
+          const names = group.map(i => `<span style="display:inline-block; background:#fff3e0; padding:2px 8px; border-radius:4px; margin:2px 2px; font-size:13px;">${i.name || '?'}</span>`).join('');
+          return `<div style="margin-top:6px;"><strong style="font-size:13px; color:#e65100;">${tName ? tName + 'T' : '미배정'}</strong><div style="margin-top:2px;">${names}</div></div>`;
+        }).join('');
         
-        return `<div style="background:white; border-radius:10px; padding:10px 14px; border-left:4px solid ${daysAgo >= 3 ? '#e53935' : daysAgo >= 2 ? '#ef6c00' : '#fbc02d'};">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="font-weight:700; font-size:13px; color:#333;">${urgency} ${date.slice(5)} (${dayName}) — ${urgencyText}</span>
-            <span style="font-size:11px; color:#999;">${items.length}명</span>
+        return `<div style="background:white; border-radius:10px; padding:12px 16px; border-left:4px solid ${daysAgo >= 3 ? '#e53935' : daysAgo >= 2 ? '#ef6c00' : '#fbc02d'};">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:700; font-size:14px; color:#333;">${urgency} ${date.slice(5)} (${dayName}) — ${urgencyText}</span>
+            <span style="font-size:12px; color:#999; font-weight:600;">${items.length}명</span>
           </div>
-          <div style="color:#555;">${teacherHtml}</div>
+          ${teacherHtml}
         </div>`;
       }).join('');
       
