@@ -1028,7 +1028,7 @@ const DB = {
         cards += `
           <div style="background:${bgColor}; border-radius:12px; padding:14px 16px; border:1px solid #f8e8ee; border-left:4px solid ${borderColor};">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <div style="font-weight:600; font-size:14px;">${statusEmoji} ${s.name || '이름없음'}</div>
+              <div style="font-weight:600; font-size:14px;">${statusEmoji} ${s._perf?.name || s.name || '이름없음'}</div>
               ${perf ? `<span style="font-size:13px; font-weight:700; color:${borderColor};">${pct}%</span>` : '<span style="font-size:12px; color:#999;">수행도 미수집</span>'}
             </div>
             <div style="font-size:12px; color:#666; line-height:1.8;">
