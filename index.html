@@ -586,10 +586,14 @@ const DB = {
     const rawStudents = await this.select('students', 'select=*,teacher_id&is_active=eq.true');
     const smsLogs = await this.select('sms_logs', 'select=*&order=sent_at.desc&limit=100');
     
+    // 수행도 데이터 (오늘)
+    const today = new Date().toISOString().split('T')[0];
+    const attendance = await this.select('attendance_records', `select=*&record_date=eq.${today}&type=eq.homework`);
+    
     // 중복 제거: student_code 기준, teacher_id 있는 레코드 우선
     const studentMap = new Map();
     rawStudents.forEach(s => {
-      const key = s.student_code || s.id; // student_code 없으면 id 사용
+      const key = s.student_code || s.id;
       const existing = studentMap.get(key);
       if (!existing || (!existing.teacher_id && s.teacher_id)) {
         studentMap.set(key, s);
@@ -597,16 +601,39 @@ const DB = {
     });
     const students = Array.from(studentMap.values());
     
+    // 수행도 매핑: student_id → status
+    const perfMap = new Map();
+    attendance.forEach(a => {
+      if (a.student_id) perfMap.set(a.student_id, a.status);
+    });
+    
     const result = teachers.map(t => {
       const myStudents = students.filter(s => s.teacher_id === t.id);
       const mySms = smsLogs.filter(s => s.teacher_id === t.id);
       const lastSms = mySms[0]?.sent_at ? new Date(mySms[0].sent_at) : null;
-      return { ...t, studentCount: myStudents.length, students: myStudents, smsCount: mySms.length, lastSmsSent: lastSms ? `${lastSms.getMonth()+1}/${lastSms.getDate()}` : '-' };
+      
+      // 수행도 계산
+      const completedCount = myStudents.filter(s => perfMap.get(s.id) === 'completed').length;
+      const inProgressCount = myStudents.filter(s => perfMap.get(s.id) === 'in_progress').length;
+      const notStartedCount = myStudents.length - completedCount - inProgressCount;
+      
+      return { 
+        ...t, 
+        studentCount: myStudents.length, 
+        students: myStudents, 
+        smsCount: mySms.length, 
+        lastSmsSent: lastSms ? `${lastSms.getMonth()+1}/${lastSms.getDate()}` : '-',
+        completedCount,
+        inProgressCount,
+        notStartedCount
+      };
     });
     
-    // 미배정 학생 (teacher_id가 null)
+    // 미배정 학생
     const unassigned = students.filter(s => !s.teacher_id);
     if (unassigned.length > 0) {
+      const completedCount = unassigned.filter(s => perfMap.get(s.id) === 'completed').length;
+      const inProgressCount = unassigned.filter(s => perfMap.get(s.id) === 'in_progress').length;
       result.push({
         id: '__unassigned__',
         name: '미배정',
@@ -614,11 +641,13 @@ const DB = {
         studentCount: unassigned.length,
         students: unassigned,
         smsCount: 0,
-        lastSmsSent: '-'
+        lastSmsSent: '-',
+        completedCount,
+        inProgressCount,
+        notStartedCount: unassigned.length - completedCount - inProgressCount
       });
     }
     
-    // 전체 학생 수 저장
     result._totalStudents = students.length;
     return result;
   },
@@ -712,8 +741,9 @@ const DB = {
     filtered.forEach((t, i) => {
       const color = COLORS[i % COLORS.length];
       const initial = t.name ? t.name[0] : '?';
-      const completionRate = t.studentCount > 0 ? Math.round((t.smsCount / t.studentCount) * 100) : 0;
+      const completionRate = t.studentCount > 0 ? Math.round(((t.completedCount || 0) / t.studentCount) * 100) : 0;
       const cappedRate = Math.min(completionRate, 100);
+      const notStarted = t.notStartedCount || t.studentCount;
       const status = getStatusInfo(cappedRate);
       
       if (filterStatus === 'danger' && status.label !== '긴급') return;
@@ -757,13 +787,17 @@ const DB = {
 
     // 상단 요약 카드 업데이트
     const allTotal = teacherData._totalStudents || totalStudents;
+    const allCompleted = filtered.reduce((sum, t) => sum + (t.completedCount || 0), 0);
+    const allInProgress = filtered.reduce((sum, t) => sum + (t.inProgressCount || 0), 0);
+    const allNotStarted = filtered.reduce((sum, t) => sum + (t.notStartedCount || t.studentCount), 0);
+    
     const vals = document.querySelectorAll('.summary-card .value');
     if (vals[0]) vals[0].textContent = allTotal + '명';
-    if (vals[1]) vals[1].textContent = totalCompleted + '명';
-    if (vals[2]) vals[2].textContent = totalWarning + '명';
-    if (vals[3]) vals[3].textContent = totalDanger + '명';
+    if (vals[1]) vals[1].textContent = allCompleted + '명';
+    if (vals[2]) vals[2].textContent = allInProgress + '명';
+    if (vals[3]) vals[3].textContent = allNotStarted + '명';
     const badge = document.querySelector('.tab .badge');
-    if (badge) badge.textContent = totalDanger + totalWarning;
+    if (badge) badge.textContent = allNotStarted;
   }
 
   // 선생님 행 클릭 → 학생 카드 펼치기
