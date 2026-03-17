@@ -1099,15 +1099,32 @@ const DB = {
         return;
       }
       
+      // 중복 제거: student_id + class_date 기준으로 유니크
+      const seen = new Set();
+      const uniqueJournals = journals.filter(j => {
+        try {
+          const detail = JSON.parse(j.status);
+          const key = `${j.student_id || detail.st_code}_${detail.class_date || j.record_date}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        } catch(e) { return true; }
+      });
+      
+      if (uniqueJournals.length === 0) {
+        alertDiv.style.display = 'none';
+        return;
+      }
+      
       alertDiv.style.display = 'block';
-      countSpan.textContent = journals.length + '건';
+      countSpan.textContent = uniqueJournals.length + '건';
       
       // 선생님별 그룹핑
       const teachers = await DB.select('teachers', 'select=*');
       const teacherMap = Object.fromEntries(teachers.map(t => [t.id, t]));
       
       const byTeacher = {};
-      journals.forEach(j => {
+      uniqueJournals.forEach(j => {
         try {
           const detail = JSON.parse(j.status);
           const tid = j.teacher_id || '__none__';
@@ -1118,7 +1135,7 @@ const DB = {
       
       // 날짜별 그룹핑
       const byDate = {};
-      journals.forEach(j => {
+      uniqueJournals.forEach(j => {
         try {
           const detail = JSON.parse(j.status);
           const d = detail.class_date || j.record_date;
