@@ -546,9 +546,13 @@
       <div class="broadcast-box">
         <div class="broadcast-header">
           <h3>📢 이번 주 전파사항</h3>
-          <button class="btn btn-save" id="btn-save-notice" onclick="saveNotice()">저장</button>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-save" id="btn-save-notice" onclick="saveNotice()">저장</button>
+            <button class="btn btn-ghost" onclick="toggleNoticeLog()" style="font-size:12px;">📋 로그</button>
+          </div>
         </div>
         <textarea class="broadcast-textarea" id="notice-text" placeholder="이번 주 전파사항을 입력하세요..."></textarea>
+        <div id="notice-log" style="display:none; margin-top:12px; max-height:300px; overflow-y:auto; border-top:1px solid #f0e8ec;"></div>
       </div>
 
       <div class="memo-title">👩‍🏫 선생님별 메모</div>
@@ -1495,7 +1499,18 @@ const DB = {
             </div>
             <textarea class="broadcast-textarea" id="memo-${t.id}" style="min-height:60px; font-size:13px;">${latest?.content || ''}</textarea>
             <div class="teacher-memo-date">${prev ? '이전: ' + new Date(prev.created_at).toLocaleDateString('ko-KR', {month:'numeric', day:'numeric'}) + ' — "' + (prev.content || '').substring(0, 30) + '"' : ''}</div>
-            <button class="btn btn-ghost" style="margin-top:8px;" onclick="saveMemo('${t.id}', '${(t.name || '').replace(/'/g, '')}')">저장</button>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <button class="btn btn-ghost" onclick="saveMemo('${t.id}', '${(t.name || '').replace(/'/g, '')}')">저장</button>
+              <button class="btn btn-ghost" onclick="toggleMemoLog('${t.id}')" style="font-size:12px;">📋 로그</button>
+            </div>
+            <div id="memo-log-${t.id}" style="display:none; margin-top:10px; max-height:200px; overflow-y:auto; border-top:1px solid #f0e8ec;">
+              ${teacherMemos.length > 0 ? teacherMemos.map(m => {
+                const d = new Date(m.created_at);
+                const dateStr = d.toLocaleDateString('ko-KR', {month:'numeric', day:'numeric'});
+                const timeStr = d.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+                return '<div style="padding:6px 10px; border-bottom:1px solid #f0e8ec; font-size:12px;"><span style="color:#d63384; font-weight:600;">' + dateStr + '</span> <span style="color:#bbb;">' + timeStr + '</span><div style="color:#555; margin-top:2px; white-space:pre-wrap;">' + (m.content || '').substring(0, 100) + '</div></div>';
+              }).join('') : '<div style="color:#bbb; font-size:12px; padding:8px;">기록 없음</div>'}
+            </div>
           </div>`;
       }).join('');
     } catch(e) {
@@ -1512,10 +1527,52 @@ const DB = {
       await DB.insert('notices', { content, created_by: '원장' });
       btn.textContent = '✅ 저장됨';
       setTimeout(() => { btn.textContent = '저장'; }, 2000);
+      const logDiv = document.getElementById('notice-log');
+      if (logDiv && logDiv.style.display !== 'none') await renderNoticeLog();
     } catch(e) {
       btn.textContent = '❌ 실패';
       setTimeout(() => { btn.textContent = '저장'; }, 2000);
     }
+  }
+
+  async function renderNoticeLog() {
+    const logDiv = document.getElementById('notice-log');
+    if (!logDiv) return;
+    try {
+      const notices = await DB.select('notices', 'select=*&order=created_at.desc&limit=20');
+      if (!notices || notices.length === 0) {
+        logDiv.innerHTML = '<div style="color:#bbb; font-size:12px; padding:8px;">기록 없음</div>';
+        return;
+      }
+      logDiv.innerHTML = notices.map(n => {
+        const d = new Date(n.created_at);
+        const dateStr = d.toLocaleDateString('ko-KR', {month:'numeric', day:'numeric'});
+        const timeStr = d.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+        return `<div style="padding:8px 12px; border-bottom:1px solid #f0e8ec; font-size:12px;">
+          <span style="color:#d63384; font-weight:600;">${dateStr}</span> <span style="color:#bbb;">${timeStr}</span>
+          <div style="color:#555; margin-top:3px; white-space:pre-wrap; line-height:1.6;">${(n.content || '').substring(0, 200)}</div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      logDiv.innerHTML = '<div style="color:#e53935; font-size:12px; padding:8px;">로드 실패</div>';
+    }
+  }
+
+  async function toggleNoticeLog() {
+    const logDiv = document.getElementById('notice-log');
+    if (!logDiv) return;
+    if (logDiv.style.display === 'none') {
+      logDiv.style.display = 'block';
+      await renderNoticeLog();
+    } else {
+      logDiv.style.display = 'none';
+    }
+  }
+
+  function toggleMemoLog(teacherId) {
+    const logDiv = document.getElementById('memo-log-' + teacherId);
+    if (!logDiv) return;
+    logDiv.style.display = logDiv.style.display === 'none' ? 'block' : 'none';
   }
 
   async function saveMemo(teacherId, teacherName) {
@@ -1527,6 +1584,9 @@ const DB = {
       await DB.insert('teacher_memos', { teacher_id: teacherId, content: textarea.value, created_by: '원장' });
       btn.textContent = '✅ 저장됨';
       setTimeout(() => { btn.textContent = '저장'; }, 2000);
+      // 로그 열려있으면 메모 탭 갱신
+      const logDiv = document.getElementById('memo-log-' + teacherId);
+      if (logDiv && logDiv.style.display !== 'none') await loadMemos();
     } catch(e) {
       btn.textContent = '❌ 실패';
       setTimeout(() => { btn.textContent = '저장'; }, 2000);
